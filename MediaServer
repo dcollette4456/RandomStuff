@@ -1,0 +1,151 @@
+show all scripts and everything that needs to be done for implementation
+
+Here's the complete implementation blueprint with all required scripts and configuration details:
+
+---
+
+### 1. Core Scripts
+
+**download_media.sh** (Main download script):
+```bash
+#!/bin/bash
+
+# Twitch channels (add URLs to twitch_channels.txt)
+while read -r channel; do
+  yt-dlp "$channel" \
+    --playlist-end 10 \
+    --format "best[height<=720]" \
+    --sponsorblock-remove all \
+    --download-archive /media/downloaded.txt \
+    --exec "HandBrakeCLI -i {} -o {}.720p.mp4 && rm {}" \
+    -o "/media/Twitch/%(uploader)s/%(id)s.%(ext)s"
+done < /media/twitch_channels.txt
+
+# YouTube channels (add URLs to youtube_channels.txt)
+yt-dlp --playlist-items 1-10 \
+  --format "best[height<=720]" \
+  --sponsorblock-remove all \
+  --cookies-from-browser chrome \
+  --download-archive /media/downloaded.txt \
+  --exec "HandBrakeCLI -i {} -o {}.720p.mp4 && rm {}" \
+  -o "/media/YouTube/%(uploader)s/%(id)s.%(ext)s" \
+  --batch-file /media/youtube_channels.txt
+```
+
+**rotate_videos.sh** (Phone sync management):
+```bash
+#!/bin/bash
+
+# Move watched files
+find /media/unwatched -name "*_watched*" -exec mv {} /media/watched/ \;
+
+# Populate sync folder with 10 newest unwatched videos
+find /media/Twitch /media/YouTube -type f -name "*.720p.mp4" -mtime -7 | \
+  grep -Fv -f <(ls /media/unwatched /media/watched) | \
+  head -n 10 | \
+  xargs -I {} cp {} /media/unwatched/
+```
+
+---
+
+### 2. System Setup
+
+**Folder Structure**:
+```bash
+sudo mkdir -p /media/{Twitch,YouTube,unwatched,watched}
+sudo touch /media/{twitch_channels.txt,youtube_channels.txt,downloaded.txt}
+```
+
+**Dependency Installation**:
+```bash
+# Core tools
+sudo apt update && sudo apt install -y yt-dlp handbrake-cli syncthing
+
+# SponsorBlock support
+sudo pip3 install yt-dlp[sponsorblock]
+```
+
+---
+
+### 3. Automation Configuration
+
+**Cron Jobs** (edit with `crontab -e`):
+```bash
+# Download new content every 3 hours
+0 */3 * * * /media/download_media.sh >> /media/download.log 2>&1
+
+# Rotate phone videos every 6 hours
+0 */6 * * * /media/rotate_videos.sh >> /media/rotation.log 2>&1
+
+# Cleanup old files weekly
+0 0 * * 0 find /media/watched -type f -mtime +30 -delete
+```
+
+**Syncthing Setup** ([4]):
+```bash
+# Create systemd service
+sudo systemctl enable syncthing@mediaserver
+
+# Configure in web UI (http://server-ip:8384)
+# Share /media/unwatched folder with phone
+```
+
+---
+
+### 4. Phone Configuration
+
+**Android Setup**:
+1. Install Syncthing from Play Store
+2. Pair with server using QR code
+3. Set sync folder to auto-download
+4. Install VLC or MX Player for video playback
+
+**Watched File Marker** (Tasker Automation):
+```bash
+Profile: File Closed in VLC
+Action: Rename file to %FILENAME_watched.%EXT
+```
+
+---
+
+### 5. Maintenance Scripts
+
+**update_ytdlp.sh**:
+```bash
+#!/bin/bash
+sudo yt-dlp -U
+sudo pip3 install --upgrade yt-dlp[sponsorblock]
+```
+
+**clean_logs.sh**:
+```bash
+#!/bin/bash
+truncate -s 0 /media/{download,rotation}.log
+```
+
+---
+
+### Implementation Checklist
+
+| Step | Command/File | Purpose |
+|------|--------------|---------|
+| 1 | `download_media.sh` | Core download logic |
+| 2 | `rotate_videos.sh` | Phone sync management |
+| 3 | Folder structure setup | Organizational foundation |
+| 4 | Cron job configuration | Automation backbone |
+| 5 | Syncthing pairing | Device synchronization |
+| 6 | Tasker setup | Watched file tracking |
+
+Test the system with single channels first using `--verbose` flag. Monitor logs in `/media/*.log` for initial troubleshooting. Update yt-dlp monthly using the maintenance script[3][2].
+
+Citations:
+[1] HowTo: Automated Youtube Downloads : r/PleX - Reddit https://www.reddit.com/r/PleX/comments/nldmop/howto_automated_youtube_downloads/
+[2] Auto-Downloading Youtube Videos for Plex Media Server with ... https://diyfuturism.com/index.php/2017/12/14/auto-downloading-youtube-videos-for-plex-media-server/
+[3] [Site Request] [Twitch] Dealing with pre-roll and mid-roll ads #1089 https://github.com/yt-dlp/yt-dlp/issues/1089
+[4] Effortless File Syncing: Automate Syncthing Installation with This Script https://www.digi77.com/syncthing-setup-script/
+[5] Video rotation with FFmpeg and exiftool - Bash Playground - YouTube https://www.youtube.com/watch?v=SmXkiXpY_Ac
+[6] The Ultimate Media Server Setup! - GitHub https://github.com/ultimate-pms/ultimate-media-server-core
+[7] Automated Home Media Server Setup - YouTube https://www.youtube.com/watch?v=3Q7UGg8LRJA
+[8] Running a Fully Automated Media Server - bchoy.me https://bchoy.me/posts/2023-04-30-running-a-fully-automated-media-center/
+[9] What can my NAS do? - Complete automation and customization for ... https://www.youtube.com/watch?v=Ql6BnreYf0Y
+[10] How to Set Up Your Own Video Streaming Server in 2025 - Hostinger https://www.hostinger.com/tutorials/how-to-set-up-a-streaming-server
